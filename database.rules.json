@@ -1,0 +1,7 @@
+{
+  "rules": {
+    /* TODO: Only admins can read right now */
+    ".read": true,
+    ".write": true,
+  }
+}
