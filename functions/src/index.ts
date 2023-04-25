@@ -5,6 +5,7 @@ import * as admin from "firebase-admin";
 
 import { createHmac } from "crypto";
 import { getAuth } from "firebase-admin/auth";
+import { getDatabase } from "firebase-admin/database";
 
 admin.initializeApp();
 
@@ -15,6 +16,8 @@ const getUniqueKey = (serial: string) => {
 	return hashedKey;
 }
 
+const timestamp = () => Math.floor(new Date().getTime() / 1000);
+
 // This function takes the serial number and a unique key (password) from the IoT controller as an argument
 // /requestNewToken?serial={serial}&key={unique_key}
 //
@@ -22,9 +25,10 @@ const getUniqueKey = (serial: string) => {
 //
 // It does the following:
 // 1. Validate that the serial and key match
-// 2. Check if we have an existing database entry for this serial number
-//    If false: Create a new user and assign user.token.serial
-// 3. Return the user token to the IoT controller
+// 2. Generate custom token
+// 3. Check if we have an existing database entry for this serial number
+//    If false: Create a new entry that checks for user.token.iotDevice = true
+// 4. Return the user token to the IoT controller
 export const requestNewToken = functions.region("europe-west1").https.onRequest(async (request, response) => {
 	if(!request.query.serial || !request.query.key) {
 		response.status(400).send("missing_parameter");
@@ -33,7 +37,7 @@ export const requestNewToken = functions.region("europe-west1").https.onRequest(
 
 	const serial = request.query.serial.toString();
 
-	if(![...serial].every(c => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z'))) {
+	if(![...serial].every(c => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z')) || serial.length < 2 || serial.length > 24) {
 		response.status(400).send("invalid_serial");
 		return;
 	}
@@ -48,8 +52,25 @@ export const requestNewToken = functions.region("europe-west1").https.onRequest(
 	// IoT controller is authenticated
 	functions.logger.log(`Authentication for Iot controller ${request.query.serial} successful`);
 
+	const db = getDatabase();
+	const garden = await db.ref(`garden/${serial}`).get();
+
+	if(garden.exists() && garden.child("last_token").exists() && garden.child("last_token_time").exists()) {
+		// Token last for one hour, so create a new one if at least 50 minutes have passed
+		if(timestamp() - garden.child("last_token_time").val() < 50 * 60) {
+			response.send(garden.child("last_token").val());
+			return;
+		}
+	}
+
+	const auth = getAuth();
+	const generatedTime = timestamp();
 	// iotDevice identifies this user as a smart garden (instead of a real person)
-	const token = await getAuth().createCustomToken(serial, { iotDevice: true });
+	const token = await auth.createCustomToken(serial, { iotDevice: true });
+
+	await db.ref(`garden/${serial}/last_token_time`).set(generatedTime);
+	await db.ref(`garden/${serial}/last_token`).set(token);
+
 	response.send(token);
 });
 
