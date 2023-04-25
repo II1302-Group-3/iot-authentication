@@ -14,7 +14,7 @@ Every Green Garden IoT controller has a unique serial number that is visible to 
 
 The file `functions/src/secrets.ts` contains two secret strings that are used by the owner to sign serial numbers:
 
-* `PASSWORD`: The password for the web interface that unlocks `SIGNING_KEY`
+* `PASSWORD`: The password that unlocks `SIGNING_KEY`
 * `SIGNING_KEY`: This key is combined with the serial number in a hashed JSON object
 
 Example: `{ serial: "X", signingKey: "Y" }` becomes `1f16d2ed0944646e26359c96408bc8c151beb46f`.
