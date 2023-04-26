@@ -56,9 +56,12 @@ export const requestNewToken = functions.region("europe-west1").https.onRequest(
 	const garden = await db.ref(`garden/${serial}`).get();
 
 	if(garden.exists() && garden.child("last_token").exists() && garden.child("last_token_time").exists()) {
-		// Token last for one hour, so create a new one if at least 50 minutes have passed
-		if(timestamp() - garden.child("last_token_time").val() < 50 * 60) {
-			response.send(garden.child("last_token").val());
+		const lastTokenTime = garden.child("last_token_time").val();
+		const tokenTimeLeft = Math.floor(lastTokenTime + 45 * 60 - timestamp());
+
+		// Token last for one hour, so create a new one if at least 45 minutes have passed
+		if(tokenTimeLeft > 0) {
+			response.send(`${garden.child("last_token").val()}:${tokenTimeLeft}:cached`);
 			return;
 		}
 	}
@@ -71,7 +74,8 @@ export const requestNewToken = functions.region("europe-west1").https.onRequest(
 	await db.ref(`garden/${serial}/last_token_time`).set(generatedTime);
 	await db.ref(`garden/${serial}/last_token`).set(token);
 
-	response.send(token);
+	const tokenTimeLeft = Math.floor(generatedTime + 45 * 60 - timestamp());
+	response.send(`${token}:${tokenTimeLeft}:new`);
 });
 
 // This function returns a unique key for a specific serial number if the user specifies the right password
