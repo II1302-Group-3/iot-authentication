@@ -66,7 +66,7 @@ export const requestNewToken = functions.region("europe-west1").https.onRequest(
 	const auth = getAuth();
 	const generatedTime = timestamp();
 	// iotDevice identifies this user as a smart garden (instead of a real person)
-	const token = await auth.createCustomToken(serial, { iotDevice: true });
+	const token = await auth.createCustomToken(`garden_${serial}`, { iotDevice: true });
 
 	await db.ref(`garden/${serial}/last_token_time`).set(generatedTime);
 	await db.ref(`garden/${serial}/last_token`).set(token);
