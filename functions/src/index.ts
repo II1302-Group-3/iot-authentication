@@ -19,6 +19,7 @@ const getUniqueKey = (serial: string) => {
 const timestamp = () => Math.floor(new Date().getTime() / 1000);
 
 // This function takes the serial number and a unique key (password) from the IoT controller as an argument
+// Error codes: missing_parameter, invalid_serial, wrong_key
 // /requestNewToken?serial={serial}&key={unique_key}
 //
 // The unique key is generated through the IoT controller by the project group
@@ -79,6 +80,7 @@ export const requestNewToken = functions.region("europe-west1").https.onRequest(
 });
 
 // This function returns a unique key for a specific serial number if the user specifies the right password
+// Error codes: missing_parameter, wrong_password
 // /signSerialNumber?serial={serial}&password={password}
 export const signSerialNumber = functions.region("europe-west1").https.onRequest((request, response) => {
 	if(!request.query.serial || !request.query.password) {
@@ -94,4 +96,107 @@ export const signSerialNumber = functions.region("europe-west1").https.onRequest
 	const uniqueKey = getUniqueKey(request.query.serial.toString());
 	functions.logger.log(`Created a key for serial number ${request.query.serial}`);
 	response.send(uniqueKey);
+});
+
+// This function is called by the app when a user wants to add a new garden to their collection
+// Error codes: missing_parameter, invalid_token, invalid_serial, garden_offline, garden_already_claimed, too_many_gardens
+// /addGarden?token={id_token}&serial={garden_serial}&nickname={garden_nickname}
+export const addGarden = functions.region("europe-west1").https.onRequest(async (request, response) => {
+	if(!request.query.token || !request.query.serial || !request.query.nickname) {
+		response.status(400).send("missing_parameter");
+		return;
+	}
+
+	const auth = getAuth();
+	const db = getDatabase();
+	const serial = request.query.serial.toString();
+
+	try {
+		const idToken = await auth.verifyIdToken(request.query.token.toString());
+		const uid = idToken.uid;
+		const claimedGardens = idToken.claimedGardens;
+
+		// User has claimed too many gardens
+		if(claimedGardens && claimedGardens.length && claimedGardens.length > 10) {
+			response.status(403).send("too_many_gardens");
+			return;
+		}
+
+		const garden = await db.ref(`garden/${serial}`).get();
+
+		if(!garden.exists()) {
+			response.status(404).send("invalid_serial");
+			return;
+		}
+
+		const lastSyncTimeRef = garden.child("last_sync_time");
+
+		// If the garden hasn't synced any values in the last five minutes
+		if(!lastSyncTimeRef.exists() || timestamp() - lastSyncTimeRef.val() > 60 * 5) {
+			response.status(404).send("garden_offline");
+			return;
+		}
+
+		const claimedByRef = garden.child("claimed_by");
+
+		// If the garden is claimed by someone else
+		if(claimedByRef.exists()) {
+			response.status(403).send("garden_already_claimed");
+			return;
+		}
+
+		await db.ref(`garden/${serial}/claimed_by`).set(uid);
+		await db.ref(`garden/${serial}/nickname`).set(request.query.nickname.toString());
+
+		await auth.setCustomUserClaims(uid, { claimed_gardens: claimedGardens ? [...claimedGardens, serial] : [serial] })
+
+		response.send("success");
+	}
+	catch {
+		response.status(400).send("invalid_token");
+	}
+});
+
+// This function is called by the app when a user wants to remove a garden from their collection
+// Error codes: missing_parameter, invalid_token, invalid_serial, garden_not_claimed
+// /removeGarden?token={id_token}&serial={garden_serial}
+export const removeGarden = functions.region("europe-west1").https.onRequest(async (request, response) => {
+	if(!request.query.token || !request.query.serial) {
+		response.status(400).send("missing_parameter");
+		return;
+	}
+
+	const auth = getAuth();
+	const db = getDatabase();
+	const serial = request.query.serial.toString();
+
+	try {
+		const idToken = await auth.verifyIdToken(request.query.token.toString());
+		const uid = idToken.uid;
+		const claimedGardens = idToken.claimedGardens;
+		const garden = await db.ref(`garden/${serial}`).get();
+
+		if(!garden.exists()) {
+			response.status(404).send("invalid_serial");
+			return;
+		}
+
+		const claimedByRef = garden.child("claimed_by");
+
+		// If the garden is not claimed by you
+		if(!claimedByRef.exists() || claimedByRef.val() != uid) {
+			response.status(403).send("garden_not_claimed");
+			return;
+		}
+
+		await db.ref(`garden/${serial}/claimed_by`).remove();
+		await db.ref(`garden/${serial}/nickname`).remove();
+
+		await auth.setCustomUserClaims(uid, { claimed_gardens: claimedGardens ? [...claimedGardens].filter(g => g === serial) : [] })
+
+		response.send("success");
+	}
+	catch {
+		response.status(400).send("invalid_token");
+	}
 });
