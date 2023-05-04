@@ -99,7 +99,7 @@ export const signSerialNumber = functions.region("europe-west1").https.onRequest
 });
 
 // This function is called by the app when a user wants to add a new garden to their collection
-// Error codes: missing_parameter, invalid_token, invalid_serial, garden_offline, garden_already_claimed, too_many_gardens
+// Error codes: missing_parameter, invalid_token, invalid_serial, garden_nickname_conflict, garden_offline, garden_already_claimed, too_many_gardens
 // /addGarden?token={id_token}&serial={garden_serial}&nickname={garden_nickname}
 export const addGarden = functions.region("europe-west1").https.onRequest(async (request, response) => {
 	if(!request.query.token || !request.query.serial || !request.query.nickname) {
@@ -107,14 +107,16 @@ export const addGarden = functions.region("europe-west1").https.onRequest(async 
 		return;
 	}
 
+	request.query.serial = request.query.serial.toString().trim();
+	request.query.nickname = request.query.nickname.toString().trim();
+
 	const auth = getAuth();
 	const db = getDatabase();
-	const serial = request.query.serial.toString();
 
 	try {
 		const idToken = await auth.verifyIdToken(request.query.token.toString());
 		const uid = idToken.uid;
-		const claimedGardens = idToken.claimedGardens;
+		const claimedGardens = idToken.claimedGardens as string[];
 
 		// User has claimed too many gardens
 		if(claimedGardens && claimedGardens.length && claimedGardens.length > 10) {
@@ -122,7 +124,16 @@ export const addGarden = functions.region("europe-west1").https.onRequest(async 
 			return;
 		}
 
-		const garden = await db.ref(`garden/${serial}`).get();
+		for(const serial of claimedGardens) {
+			const gardenNickname = (await db.ref(`garden/${serial}/nickname`).get()).val();
+
+			if(gardenNickname === request.query.nickname) {
+				response.status(403).send("garden_nickname_conflict");
+				return;
+			}
+		}
+
+		const garden = await db.ref(`garden/${request.query.serial}`).get();
 
 		if(!garden.exists()) {
 			response.status(404).send("invalid_serial");
@@ -146,11 +157,11 @@ export const addGarden = functions.region("europe-west1").https.onRequest(async 
 			return;
 		}
 
-		await db.ref(`garden/${serial}/claimed_by`).set(uid);
-		await db.ref(`garden/${serial}/nickname`).set(request.query.nickname.toString());
+		await db.ref(`garden/${request.query.serial}/claimed_by`).set(uid);
+		await db.ref(`garden/${request.query.serial}/nickname`).set(request.query.nickname.toString());
 
-		const claimedGardensWithoutCurrent = claimedGardens ? [...claimedGardens].filter(g => g === serial) : [];
-		await auth.setCustomUserClaims(uid, { claimedGardens: [...claimedGardensWithoutCurrent, serial] })
+		const claimedGardensWithoutCurrent = claimedGardens ? [...claimedGardens].filter(g => g === request.query.serial) : [];
+		await auth.setCustomUserClaims(uid, { claimedGardens: [...claimedGardensWithoutCurrent, request.query.serial] })
 
 		response.send("success");
 	}
@@ -168,15 +179,16 @@ export const removeGarden = functions.region("europe-west1").https.onRequest(asy
 		return;
 	}
 
+	request.query.serial = request.query.serial.toString().trim();
+
 	const auth = getAuth();
 	const db = getDatabase();
-	const serial = request.query.serial.toString();
 
 	try {
 		const idToken = await auth.verifyIdToken(request.query.token.toString());
 		const uid = idToken.uid;
-		const claimedGardens = idToken.claimedGardens;
-		const garden = await db.ref(`garden/${serial}`).get();
+		const claimedGardens = idToken.claimedGardens as string[];
+		const garden = await db.ref(`garden/${request.query.serial}`).get();
 
 		if(!garden.exists()) {
 			response.status(404).send("invalid_serial");
@@ -186,7 +198,7 @@ export const removeGarden = functions.region("europe-west1").https.onRequest(asy
 		const claimedByRef = garden.child("claimed_by");
 
 		// The user could have the garden in their custom claims - always clean it up
-		const claimedGardensWithoutCurrent = claimedGardens ? [...claimedGardens].filter(g => g === serial) : [];
+		const claimedGardensWithoutCurrent = claimedGardens ? [...claimedGardens].filter(g => g === request.query.serial) : [];
 		await auth.setCustomUserClaims(uid, { claimedGardens: claimedGardensWithoutCurrent })
 
 		// If the garden is not claimed by you
@@ -195,8 +207,8 @@ export const removeGarden = functions.region("europe-west1").https.onRequest(asy
 			return;
 		}
 
-		await db.ref(`garden/${serial}/claimed_by`).remove();
-		await db.ref(`garden/${serial}/nickname`).remove();
+		await db.ref(`garden/${request.query.serial}/claimed_by`).remove();
+		await db.ref(`garden/${request.query.serial}/nickname`).remove();
 
 		response.send("success");
 	}
