@@ -124,7 +124,7 @@ export const addGarden = functions.region("europe-west1").https.onRequest(async 
 			return;
 		}
 
-		for(const serial of claimedGardens) {
+		for(const serial of claimedGardens ?? []) {
 			const gardenNickname = (await db.ref(`garden/${serial}/nickname`).get()).val();
 
 			if(gardenNickname === request.query.nickname) {
