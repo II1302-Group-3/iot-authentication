@@ -148,7 +148,7 @@ export const addGarden = functions.region("europe-west1").https.onRequest(async 
 		await db.ref(`garden/${serial}/claimed_by`).set(uid);
 		await db.ref(`garden/${serial}/nickname`).set(request.query.nickname.toString());
 
-		await auth.setCustomUserClaims(uid, { claimed_gardens: claimedGardens ? [...claimedGardens, serial] : [serial] })
+		await auth.setCustomUserClaims(uid, { claimedGardens: claimedGardens ? [...claimedGardens, serial] : [serial] })
 
 		response.send("success");
 	}
@@ -192,7 +192,7 @@ export const removeGarden = functions.region("europe-west1").https.onRequest(asy
 		await db.ref(`garden/${serial}/claimed_by`).remove();
 		await db.ref(`garden/${serial}/nickname`).remove();
 
-		await auth.setCustomUserClaims(uid, { claimed_gardens: claimedGardens ? [...claimedGardens].filter(g => g === serial) : [] })
+		await auth.setCustomUserClaims(uid, { claimedGardens: claimedGardens ? [...claimedGardens].filter(g => g === serial) : [] })
 
 		response.send("success");
 	}
