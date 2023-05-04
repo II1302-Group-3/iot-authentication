@@ -162,7 +162,7 @@ export const addGarden = functions.region("europe-west1").https.onRequest(async 
 		await db.ref(`garden/${request.query.serial}/claimed_by`).set(uid);
 		await db.ref(`garden/${request.query.serial}/nickname`).set(request.query.nickname.toString());
 
-		const claimedGardensWithoutCurrent = claimedGardens ? [...claimedGardens].filter(g => g === request.query.serial) : [];
+		const claimedGardensWithoutCurrent = claimedGardens ? [...claimedGardens].filter(g => g !== request.query.serial) : [];
 		await auth.setCustomUserClaims(uid, { claimedGardens: [...claimedGardensWithoutCurrent, request.query.serial] })
 
 		response.send("success");
@@ -200,7 +200,7 @@ export const removeGarden = functions.region("europe-west1").https.onRequest(asy
 		const claimedByRef = garden.child("claimed_by");
 
 		// The user could have the garden in their custom claims - always clean it up
-		const claimedGardensWithoutCurrent = claimedGardens ? [...claimedGardens].filter(g => g === request.query.serial) : [];
+		const claimedGardensWithoutCurrent = claimedGardens ? [...claimedGardens].filter(g => g !== request.query.serial) : [];
 		await auth.setCustomUserClaims(uid, { claimedGardens: claimedGardensWithoutCurrent })
 
 		// If the garden is not claimed by you
