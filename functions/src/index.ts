@@ -144,8 +144,10 @@ export const addGarden = functions.region("europe-west1").https.onRequest(async 
 
 		// If the garden hasn't synced any values in the last five minutes
 		if(!lastSyncTimeRef.exists() || timestamp() - lastSyncTimeRef.val() > 60 * 5) {
-			response.status(404).send("garden_offline");
-			return;
+			functions.logger.warn(
+				`User ${uid} tried to claim an offline garden ${request.query.serial}\n
+				This is only allowed during the testing phase`
+			);
 		}
 
 		const claimedByRef = garden.child("claimed_by");
