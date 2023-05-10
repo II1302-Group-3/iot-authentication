@@ -116,15 +116,15 @@ export const addGarden = functions.region("europe-west1").https.onRequest(async 
 	try {
 		const idToken = await auth.verifyIdToken(request.query.token.toString());
 		const uid = idToken.uid;
-		const claimedGardens = idToken.claimedGardens;
+		const claimedGardens = idToken.claimedGardens ?? {};
 
 		// User has claimed too many gardens
-		if(claimedGardens && Object.keys(claimedGardens).length > 10) {
+		if(Object.keys(claimedGardens).length > 10) {
 			response.status(403).send("too_many_gardens");
 			return;
 		}
 
-		for(const serial of Object.keys(claimedGardens) ?? []) {
+		for(const serial of Object.keys(claimedGardens)) {
 			const gardenNickname = (await db.ref(`garden/${serial}/nickname`).get()).val();
 
 			if(gardenNickname === request.query.nickname) {
@@ -162,15 +162,15 @@ export const addGarden = functions.region("europe-west1").https.onRequest(async 
 		await db.ref(`garden/${request.query.serial}/claimed_by`).set(uid);
 		await db.ref(`garden/${request.query.serial}/nickname`).set(request.query.nickname.toString());
 
-		const newClaimedGardens: any = claimedGardens ? {...claimedGardens} : {};
+		const newClaimedGardens: any = {...claimedGardens};
 		newClaimedGardens[`${request.query.serial}`] = true;
 
 		await auth.setCustomUserClaims(uid, { claimedGardens: newClaimedGardens });
 
 		response.send("success");
 	}
-	catch {
-		response.status(400).send("invalid_token");
+	catch(error: any) {
+		response.status(500).send(`Server error: ${error.message ?? error}`);
 	}
 });
 
@@ -191,6 +191,8 @@ export const removeGarden = functions.region("europe-west1").https.onRequest(asy
 	try {
 		const idToken = await auth.verifyIdToken(request.query.token.toString());
 		const uid = idToken.uid;
+		const claimedGardens = idToken.claimedGardens ?? {};
+
 		const garden = await db.ref(`garden/${request.query.serial}`).get();
 
 		if(!garden.exists()) {
@@ -200,7 +202,7 @@ export const removeGarden = functions.region("europe-west1").https.onRequest(asy
 
 		const claimedByRef = garden.child("claimed_by");
 
-		const newClaimedGardens = idToken.claimedGardens ? {...idToken.claimedGardens} : {};
+		const newClaimedGardens = claimedGardens;
 		try { delete newClaimedGardens[`${request.query.serial}`] } catch {}
 
 		await auth.setCustomUserClaims(uid, { claimedGardens: newClaimedGardens });
@@ -216,7 +218,7 @@ export const removeGarden = functions.region("europe-west1").https.onRequest(asy
 
 		response.send("success");
 	}
-	catch {
-		response.status(400).send("invalid_token");
+	catch(error: any) {
+		response.status(500).send(`Server error: ${error.message ?? error}`);
 	}
 });
