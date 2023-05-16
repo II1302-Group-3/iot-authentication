@@ -216,6 +216,22 @@ export const removeGarden = functions.region("europe-west1").https.onRequest(asy
 		await db.ref(`garden/${request.query.serial}/claimed_by`).remove();
 		await db.ref(`garden/${request.query.serial}/nickname`).remove();
 
+		// Not a requirement but the user's settings shouldn't persist when the garden is removed
+		try {
+			await db.ref(`garden/${request.query.serial}/target_moisture`).set(0);
+			await db.ref(`garden/${request.query.serial}/target_light_level`).set(0);
+
+			const clearStatistics = request.query.clearStatistics === "true";
+
+			if(clearStatistics) {
+				await db.ref(`garden/${request.query.serial}/moisture_level`).remove();
+				await db.ref(`garden/${request.query.serial}/light_level`).remove();
+				await db.ref(`garden/${request.query.serial}/humidity_level`).remove();
+				await db.ref(`garden/${request.query.serial}/temperature_level`).remove();
+			}
+		}
+		catch { }
+
 		response.send("success");
 	}
 	catch(error: any) {
